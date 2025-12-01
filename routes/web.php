@@ -42,6 +42,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/rooms/{room}', [RoomController::class, 'show'])->name('rooms.show');
         Route::post('/bookings', [BookingController::class, 'store'])->name('bookings.store');
         Route::get('/my-bookings', [BookingController::class, 'index'])->name('my-bookings.index');
+        Route::get('/bookings/{booking}/edit', [BookingController::class, 'edit'])->name('bookings.edit');
+        Route::patch('/bookings/{booking}', [BookingController::class, 'update'])->name('bookings.update');
+        Route::delete('/bookings/{booking}', [BookingController::class, 'destroy'])->name('bookings.destroy');
     });
 
     // Admin Routes

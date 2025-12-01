@@ -9,6 +9,50 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
                 <div class="p-6 text-gray-900">
+
+                    <!-- Search and Filter Form -->
+                    <div class="mb-6 p-4 bg-gray-50 rounded-lg border">
+                        <form action="{{ route('admin.bookings.index') }}" method="GET">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 items-end">
+                                <!-- User Search -->
+                                <div>
+                                    <label for="user" class="block text-sm font-medium text-gray-700 mb-1">User</label>
+                                    <input type="text" name="user" id="user" class="form-input block w-full text-sm rounded-md border-gray-300 shadow-sm" placeholder="Search by user name..." value="{{ request('user') }}">
+                                </div>
+                                <!-- Room Search -->
+                                <div>
+                                    <label for="room" class="block text-sm font-medium text-gray-700 mb-1">Room</label>
+                                    <input type="text" name="room" id="room" class="form-input block w-full text-sm rounded-md border-gray-300 shadow-sm" placeholder="Search by room name..." value="{{ request('room') }}">
+                                </div>
+                                <!-- Status Filter -->
+                                <div>
+                                    <label for="status" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                                    <select name="status" id="status" class="form-select block w-full text-sm rounded-md border-gray-300 shadow-sm">
+                                        <option value="">All Statuses</option>
+                                        <option value="pending" @if(request('status') == 'pending') selected @endif>Pending</option>
+                                        <option value="approved" @if(request('status') == 'approved') selected @endif>Approved</option>
+                                        <option value="rejected" @if(request('status') == 'rejected') selected @endif>Rejected</option>
+                                    </select>
+                                </div>
+                                <!-- Date Filter -->
+                                <div>
+                                    <label for="date" class="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                                    <input type="date" name="date" id="date" class="form-input block w-full text-sm rounded-md border-gray-300 shadow-sm" value="{{ request('date') }}">
+                                </div>
+
+                                <!-- Action Buttons -->
+                                <div class="flex space-x-2">
+                                    <button type="submit" class="w-full inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                        Filter
+                                    </button>
+                                    <a href="{{ route('admin.bookings.index') }}" class="w-full inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                                        Reset
+                                    </a>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+
                     <h3 class="text-lg font-semibold mb-4">All Booking Requests</h3>
 
                     @if (session('success'))
@@ -149,6 +193,10 @@
                             @endforelse
                         </tbody>
                         </table>
+                    </div>
+
+                    <div class="mt-6">
+                        {{ $bookings->links() }}
                     </div>
                 </div>
             </div>
