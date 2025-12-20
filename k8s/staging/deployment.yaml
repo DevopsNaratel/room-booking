@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: room-booking
-  namespace: staging
+  namespace: staging-app
   labels:
     app: room-booking
 spec:
