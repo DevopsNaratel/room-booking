@@ -1,46 +1,52 @@
-# Use the official PHP image with FPM
-FROM php:8.2-fpm
+# Build stage for frontend assets
+FROM node:20 AS build
+
+WORKDIR /app
+
+COPY package*.json  ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+# Production stage
+FROM php:8.2-apache
+
+# Install system dependencies and PHP extensions
+RUN apt-get update && apt-get install -y \
+    libzip-dev \
+    zip \
+    unzip \
+    && docker-php-ext-install pdo_mysql bcmath zip opcache \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Enable Apache mod_rewrite
+RUN a2enmod rewrite
 
 # Set working directory
 WORKDIR /var/www/html
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpng-dev \
-    libjpeg62-turbo-dev \
-    libfreetype6-dev \
-    locales \
-    zip \
-    jpegoptim optipng pngquant gifsicle \
-    vim \
-    unzip \
-    git \
-    curl \
-    libzip-dev \
-    libonig-dev \
-    libxml2-dev \
-    libpq-dev
-
-# Clear cache
-RUN apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Install PHP extensions
-RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
-
-# Get latest Composer
+# Install Composer dependencies (layer caching)
+COPY composer.json composer.lock ./
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
 
-# Copy existing application directory contents
+# Copy application files
 COPY . .
 
-# Install composer dependencies
-RUN composer install --no-interaction --no-plugins --no-scripts --prefer-dist
+# Copy built frontend assets from build stage
+COPY --from=build /app/public/build ./public/build
 
-# Copy existing application directory permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
-RUN chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+# Create sqlite database file
+RUN mkdir -p /var/www/html/database && touch /var/www/html/database/database.sqlite
 
-# Expose port 9000 and start php-fpm server
-EXPOSE 9000
-CMD ["php-fpm"]
+# Set permissions
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/database
+
+# Configure Apache DocumentRoot
+ENV APACHE_DOCUMENT_ROOT /var/www/html/public
+RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/000-default.conf \
+    && sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf
+
+# Expose port 80
+EXPOSE 80

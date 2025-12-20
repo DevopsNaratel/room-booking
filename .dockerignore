@@ -16,3 +16,9 @@ npm-debug.log
 /storage/framework/views/*
 /storage/logs/*
 /bootstrap/cache/*.php
+/var/
+.env
+.idea
+.vscode
+php unit.xml
+/tests
