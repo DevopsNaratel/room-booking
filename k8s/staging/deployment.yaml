@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: room-booking
+  namespace: staging
   labels:
     app: room-booking
 spec:
@@ -15,36 +16,39 @@ spec:
         app: room-booking
     spec:
       containers:
-      - name: room-booking
-        image: rhan33/room-booking:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 80
-        env:
-        - name: APP_ENV
-          value: "production"
-        - name: APP_DEBUG
-          value: "false"
-        - name: APP_KEY
-          value: "base64:your_generated_key_here" # Should be replaced by secret in real env
-        - name: DB_CONNECTION
-          value: "sqlite"
-        - name: DB_DATABASE
-          value: "/var/www/html/database/database.sqlite"
-        - name: SESSION_DRIVER
-          value: "file"
-        - name: CACHE_STORE
-          value: "file"
-        - name: QUEUE_CONNECTION
-          value: "sync"        livenessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 80
-          initialDelaySeconds: 5
-          periodSeconds: 5
+        - name: room-booking
+          image: rhan33/room-booking:staging-1   # 👈 Jenkins auto-updates
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: APP_ENV
+              value: "staging"
+            - name: APP_DEBUG
+              value: "false"
+            - name: APP_KEY
+              value: "base64:your_generated_key_here"
+            - name: DB_CONNECTION
+              value: "sqlite"
+            - name: DB_DATABASE
+              value: "/var/www/html/database/database.sqlite"
+            - name: SESSION_DRIVER
+              value: "file"
+            - name: CACHE_STORE
+              value: "file"
+            - name: QUEUE_CONNECTION
+              value: "sync"
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
