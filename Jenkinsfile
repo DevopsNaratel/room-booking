@@ -47,7 +47,7 @@ pipeline {
             git commit -m "ci: deploy staging ${IMAGE_TAG}" || echo "No changes to commit"
 
             git remote set-url origin \
-              https://${GIT_USER}:${GIT_TOKEN}@github.com/ORG/REPO.git
+              https://${GIT_USER}:${GIT_TOKEN}@github.com/rharff/room-booking.git
 
             git push origin main
           '''
