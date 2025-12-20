@@ -14,33 +14,17 @@ pipeline {
       }
     }
 
-    stage('Build and Push to Docker Hub') {
+    stage('Push') {
       steps {
-        // Ensure you have created credentials in Jenkins with ID 'dockerhub'
-        withCredentials([
-          usernamePassword(
-            credentialsId: 'dockerhub',
-            usernameVariable: 'DOCKER_USER',
-            passwordVariable: 'DOCKER_PASS'
-          )
-        ]) {
-          sh '''
-            # Login to Docker Hub
-            echo "${DOCKER_PASS}" | docker login -u "${DOCKER_USER}" --password-stdin
-
-            # Build the Docker image
-            docker build -t ${FULL_IMAGE} .
-            
-            # Also tag it as 'latest' for convenience
-            docker tag ${FULL_IMAGE} ${IMAGE_NAME}:${IMAGE_TAG}
-
-            # Push both tags
-            docker push ${FULL_IMAGE}
-            docker push ${IMAGE_NAME}:${IMAGE_TAG}
-
-            # Clean up local images to save disk space on the Jenkins agent
-            docker rmi ${FULL_IMAGE} ${IMAGE_NAME}:${IMAGE_TAG}
-          '''
+        withCredentials([usernamePassword(
+          credentialsId: 'dockerhub-creds',
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+        )]) {
+          sh """
+            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+            docker push $IMAGE_NAME:$TAG
+          """
         }
       }
     }
