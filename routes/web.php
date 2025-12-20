@@ -10,6 +10,11 @@ use App\Models\Booking; // Import the Booking model
 use App\Models\Room;
 use Carbon\Carbon; // Import Carbon
 
+// routes/web.php
+Route::get('/health', function () {
+    return response()->json(['status' => 'ok'], 200);
+});
+
 Route::get('/', function () {
     return view('welcome');
 });
@@ -42,19 +47,19 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/dashboard/{year?}/{month?}', function ($year = null, $month = null) {
             $date = Carbon::now();
             if ($year && $month) {
-                $date->year((int)$year)->month((int)$month);
+                $date->year((int) $year)->month((int) $month);
             }
 
             $startOfMonth = $date->copy()->startOfMonth()->startOfDay();
             $endOfMonth = $date->copy()->endOfMonth()->endOfDay();
 
             $bookings = Booking::with(['user', 'room'])
-                                ->where('status', 'approved')
-                                ->where(function ($query) use ($startOfMonth, $endOfMonth) {
-                                    $query->where('start_time', '<=', $endOfMonth)
-                                          ->where('end_time', '>=', $startOfMonth);
-                                })
-                                ->get();
+                ->where('status', 'approved')
+                ->where(function ($query) use ($startOfMonth, $endOfMonth) {
+                    $query->where('start_time', '<=', $endOfMonth)
+                        ->where('end_time', '>=', $startOfMonth);
+                })
+                ->get();
 
             $daysInMonth = $date->daysInMonth;
             $firstDayOfMonth = Carbon::parse($date->format('Y-m-01'));
@@ -99,7 +104,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 
                 for ($day = $displayStartDay; $day <= $displayEndDay; $day++) {
-                     // Ensure the day is within the current month's bounds
+                    // Ensure the day is within the current month's bounds
                     if ($day >= 1 && $day <= $daysInMonth) {
                         if (!isset($bookedDays[$day])) {
                             $bookedDays[$day] = [];
@@ -145,4 +150,4 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 });
 
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';

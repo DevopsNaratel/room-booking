@@ -26,7 +26,6 @@ spec:
                 secretKeyRef:
                   name: room-booking-secret
                   key: APP_KEY
-
           livenessProbe:
             httpGet:
               path: /health
@@ -40,3 +39,4 @@ spec:
               port: 80
             initialDelaySeconds: 10
             periodSeconds: 5
+
