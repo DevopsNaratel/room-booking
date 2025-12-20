@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: room-booking
-          image: rhan33/room-booking:staging-1   # 👈 Jenkins auto-updates
+          image: rhan33/room-booking:staging-12
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
