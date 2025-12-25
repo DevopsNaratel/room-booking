@@ -4,7 +4,7 @@ WORKDIR /app
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
 
-# --- Stage 2: Frontend Assets ---
+# --- Stage 2: Frontend Assets (Vite) ---
 FROM node:20-alpine as frontend
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -15,31 +15,27 @@ RUN npm run build
 # --- Stage 3: Production Image ---
 FROM php:8.4-fpm-alpine
 
-# Install system dependencies & PostgreSQL dev libraries
+# Install system dependencies
 RUN apk add --no-cache \
-    libpng-dev \
-    libzip-dev \
-    zip \
-    unzip \
-    git \
-    icu-dev \
-    oniguruma-dev \
-    postgresql-dev  # <--- WAJIB untuk PostgreSQL
+    libpng-dev libzip-dev zip unzip git icu-dev oniguruma-dev
 
-# Install PHP extensions (pdo_pgsql)
-RUN docker-php-ext-install pdo_pgsql zip opcache intl bcmath
+# Install PHP extensions
+RUN docker-php-ext-install pdo_mysql zip opcache intl bcmath
 
+# Set working directory
 WORKDIR /var/www
 
-# Copy application code & assets
+# Copy application code
 COPY . .
+
+# Copy dependencies from previous stages
 COPY --from=vendor /app/vendor/ ./vendor/
 COPY --from=frontend /app/public/build/ ./public/build/
 
 # Set permissions
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
-# Optimasi Laravel
+# Optimasi Laravel untuk Production
 RUN php artisan config:cache && \
     php artisan route:cache && \
     php artisan view:cache
