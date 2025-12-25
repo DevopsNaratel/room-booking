@@ -7,7 +7,7 @@ pipeline {
         APP_NAME        = 'room-booking' 
         DOCKER_IMAGE    = "diwamln/${APP_NAME}"
         REGISTRY_ID     = 'docker-hub'
-        GIT_ID       = 'git-token'
+        GIT_ID       = 'git-raihan'
         MANIFEST_REPO   = 'github.com/DevopsNaratel/deployment-manifests'
     }
 
