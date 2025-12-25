@@ -4,7 +4,7 @@ pipeline {
     environment {
         // Ubah bagian ini
         // sesuaikan dengan nama aplikasi anda begitu juga credentialnya
-        APP_NAME        = 'room-booking-app' 
+        APP_NAME        = 'room-booking' 
         DOCKER_IMAGE    = "diwamln/${APP_NAME}"
         REGISTRY_ID     = 'docker-hub'
         GIT_ID       = 'git-token'
