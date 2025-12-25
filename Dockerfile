@@ -1,69 +1,49 @@
-# --------------------
-# Frontend build stage
-# --------------------
-FROM node:20 AS build
-
+# --- Stage 1: PHP Dependencies ---
+FROM composer:latest as vendor
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
+
+# --- Stage 2: Frontend Assets ---
+FROM node:20-alpine as frontend
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm install
 COPY . .
 RUN npm run build
 
-# --------------------
-# Backend runtime stage
-# --------------------
-FROM php:8.2-apache
+# --- Stage 3: Production Image ---
+FROM php:8.4-fpm-alpine
 
-# System deps + PHP extensions
-RUN apt-get update && apt-get install -y \
+# Install system dependencies & PostgreSQL dev libraries
+RUN apk add --no-cache \
+    libpng-dev \
     libzip-dev \
     zip \
     unzip \
-    sqlite3 \
-    libsqlite3-dev \
- && docker-php-ext-install \
-    pdo \
-    pdo_mysql \
-    pdo_sqlite \
-    bcmath \
-    zip \
-    opcache \
- && apt-get clean \
- && rm -rf /var/lib/apt/lists/*
+    git \
+    icu-dev \
+    oniguruma-dev \
+    postgresql-dev  # <--- WAJIB untuk PostgreSQL
 
-# Enable Apache rewrite
-RUN a2enmod rewrite
+# Install PHP extensions (pdo_pgsql)
+RUN docker-php-ext-install pdo_pgsql zip opcache intl bcmath
 
-WORKDIR /var/www/html
+WORKDIR /var/www
 
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-
-# --- FIX START ---
-# 1. Install PHP deps WITHOUT scripts (avoids the "missing artisan" error)
-COPY composer.json composer.lock ./
-RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
-
-# 2. Copy the actual application code (including artisan)
+# Copy application code & assets
 COPY . .
+COPY --from=vendor /app/vendor/ ./vendor/
+COPY --from=frontend /app/public/build/ ./public/build/
 
-# 3. Now that the code is present, finish the composer dump and run scripts
-RUN composer dump-autoload --optimize --no-dev
-# --- FIX END ---
+# Set permissions
+RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
-# Copy frontend build output
-COPY --from=build /app/public/build ./public/build
+# Optimasi Laravel
+RUN php artisan config:cache && \
+    php artisan route:cache && \
+    php artisan view:cache
 
-# Create SQLite database
-RUN mkdir -p database \
- && touch database/database.sqlite \
- && chown -R www-data:www-data database storage bootstrap/cache
-
-# Apache document root to /public
-ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
-RUN sed -ri 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' \
-    /etc/apache2/sites-available/000-default.conf \
- && sed -ri 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' \
-    /etc/apache2/apache2.conf
-
-EXPOSE 80
+USER www-data
+EXPOSE 9000
+CMD ["php-fpm"]

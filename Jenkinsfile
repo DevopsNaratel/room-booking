@@ -1,91 +1,76 @@
 pipeline {
-  agent {
-    kubernetes {
-      yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: docker
-    image: docker:27-cli
-    command:
-    - cat
-    tty: true
-    volumeMounts:
-    - name: docker-sock
-      mountPath: /var/run/docker.sock
-  volumes:
-  - name: docker-sock
-    hostPath:
-      path: /var/run/docker.sock
-"""
-    }
-  }
+    agent any
 
-  environment {
-    IMAGE_NAME = "rhan33/room-booking"
-    IMAGE_TAG  = "staging-${BUILD_NUMBER}"
-    FULL_IMAGE = "${IMAGE_NAME}:${IMAGE_TAG}"
-  }
-
-  stages {
-
-    stage('Checkout') {
-      steps {
-        checkout scm
-      }
+    environment {
+        // Ubah bagian ini
+        APP_NAME        = 'room-booking-app' // sesuaikan dengan nama aplikasi anda
+        DOCKER_IMAGE    = "diwamln/${APP_NAME}"
+        DOCKER_CREDS    = 'docker-hub' // sesuaikan dengan credential yang telah di-set
+        GIT_CREDS       = 'git-token' // PAT classic github
+        MANIFEST_REPO   = 'github.com/DevopsNaratel/deployment-manifests'
     }
 
-    stage('Build & Push Image') {
-      steps {
-        container('docker') {
-          withCredentials([usernamePassword(
-            credentialsId: 'dockerhub',
-            usernameVariable: 'DOCKER_USER',
-            passwordVariable: 'DOCKER_PASS'
-          )]) {
-            sh '''
-              echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-              docker build -t $FULL_IMAGE .
-              docker push $FULL_IMAGE
-            '''
-          }
+    stages {
+        stage('Setup') {
+            steps {
+                script {
+                    def commitHash = sh(returnStdout: true, script: "git rev-parse --short HEAD").trim()
+                    env.BASE_TAG = "build-${BUILD_NUMBER}-${commitHash}"
+                    currentBuild.displayName = "#${BUILD_NUMBER}-${env.BASE_TAG}"
+                }
+            }
         }
-      }
-    }
 
-    stage('Update Kubernetes Manifest (GitOps)') {
-      steps {
-        withCredentials([usernamePassword(
-          credentialsId: 'github',
-          usernameVariable: 'GIT_USER',
-          passwordVariable: 'GIT_TOKEN'
-        )]) {
-          sh '''
-            sed -i "s|image: .*|image: $FULL_IMAGE|" k8s/staging/deployment.yaml
-
-            git config user.name "rharff"
-            git config user.email "rharff@gmail.com"
-
-            git add k8s/staging/deployment.yaml
-            git commit -m "ci: deploy staging $IMAGE_TAG" || echo "No changes"
-
-            git remote set-url origin \
-              https://$GIT_USER:$GIT_TOKEN@github.com/rharff/room-booking.git
-
-            git push origin HEAD:main
-          '''
+        stage('Build & Push') {
+            steps {
+                script {
+                    docker.withRegistry('', DOCKER_CREDS) {
+                        def appImage = docker.build("${DOCKER_IMAGE}:${env.BASE_TAG}")
+                        appImage.push()
+                        appImage.push('latest')
+                    }
+                }
+            }
         }
-      }
-    }
-  }
 
-  post {
-    success {
-      echo "✅ Image pushed & GitOps updated → ArgoCD will deploy $FULL_IMAGE"
+        stage('Update Manifest') {
+            steps {
+                // Kita buat fungsi reusable untuk update manifest
+                updateManifest('dev', "${APP_NAME}/dev/deployment.yaml")
+            }
+        }
+
+        stage('Approval') {
+            steps {
+                input message: "Promote ke PROD?", ok: "Yes"
+            }
+        }
+
+        stage('Promote to PROD') {
+            steps {
+                updateManifest('prod', "${APP_NAME}/prod/deployment.yaml")
+            }
+        }
     }
-    failure {
-      echo "❌ Pipeline failed"
+}
+
+// Fungsi pembantu agar script utama tetap bersih
+def updateManifest(envName, filePath) {
+    echo "Updating ${envName} manifest..."
+    sh "rm -rf temp_manifests_${envName}"
+    dir("temp_manifests_${envName}") {
+        withCredentials([usernamePassword(credentialsId: env.GIT_CREDS, usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+            sh "git clone https://${GIT_USER}:${GIT_PASS}@${env.MANIFEST_REPO} ."
+            sh "sed -i -E 's|image: .*:.*|image: docker.io/${env.DOCKER_IMAGE}:${env.BASE_TAG}|g' ${filePath}"
+            sh """
+                git config user.email "jenkins@bot.com"
+                git config user.name "Jenkins"
+                git add .
+                if ! git diff-index --quiet HEAD; then
+                    git commit -m 'Deploy ${env.APP_NAME} to ${envName}: ${env.BASE_TAG}'
+                    git push origin main
+                fi
+            """
+        }
     }
-  }
 }
