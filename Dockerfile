@@ -2,6 +2,7 @@
 FROM composer:latest as vendor
 WORKDIR /app
 COPY composer.json composer.lock ./
+# Tetap pakai ini untuk speed, tapi nanti kita generate autoloader-nya
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
 
 # --- Stage 2: Build Frontend Assets ---
@@ -24,25 +25,31 @@ RUN apk add --no-cache \
     oniguruma-dev \
     icu-dev
 
-# Install extension pdo_mysql untuk koneksi ke MySQL
+# Install extension pdo_mysql
 RUN docker-php-ext-install pdo_mysql mbstring zip bcmath intl
+
+# Install composer di stage final untuk menjalankan dump-autoload (Opsional tapi aman)
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www
 
-# Copy source code dan hasil build dari stage sebelumnya
+# 1. Copy file project dulu
 COPY . .
+
+# 2. Copy dependencies dari stage vendor
 COPY --from=vendor /app/vendor/ ./vendor/
+
+# 3. Copy assets dari stage frontend
 COPY --from=frontend /app/public/build/ ./public/build/
 
-# Set permission agar Laravel bisa menulis log/cache
+# --- BARIS KRITIKAL YANG DITAMBAHKAN ---
+# Ini untuk membuat file vendor/autoload.php yang tadi hilang
+RUN composer dump-autoload --optimize --no-dev
+
+# Set permission
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
-# Gunakan user non-root untuk keamanan
 USER www-data
-
-# Port 8000 adalah port default php artisan serve
 EXPOSE 8000
 
-# Jalankan server internal Laravel
-# --host=0.0.0.0 wajib agar bisa diakses dari luar container (oleh Service K8s)
 CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
