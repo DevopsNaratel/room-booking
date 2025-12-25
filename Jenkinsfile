@@ -3,10 +3,11 @@ pipeline {
 
     environment {
         // Ubah bagian ini
-        APP_NAME        = 'room-booking-app' // sesuaikan dengan nama aplikasi anda
+        // sesuaikan dengan nama aplikasi anda begitu juga credentialnya
+        APP_NAME        = 'room-booking-app' 
         DOCKER_IMAGE    = "diwamln/${APP_NAME}"
-        REGISTRY_ID     = 'docker-hub' // docker hub credentials id
-        GIT_ID       = 'git-token' // git credentials id
+        REGISTRY_ID     = 'docker-hub'
+        GIT_ID       = 'git-token'
         MANIFEST_REPO   = 'github.com/DevopsNaratel/deployment-manifests'
     }
 
