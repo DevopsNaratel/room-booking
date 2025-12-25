@@ -5,8 +5,8 @@ pipeline {
         // Ubah bagian ini
         APP_NAME        = 'room-booking-app' // sesuaikan dengan nama aplikasi anda
         DOCKER_IMAGE    = "diwamln/${APP_NAME}"
-        DOCKER_CREDS    = 'docker-hub' // sesuaikan dengan credential yang telah di-set
-        GIT_CREDS       = 'git-token' // PAT classic github
+        DOCKER_CREDS    = 'docker-hub' // docker hub credentials id
+        GIT_CREDS       = 'git-token' // git credentials id
         MANIFEST_REPO   = 'github.com/DevopsNaratel/deployment-manifests'
     }
 
