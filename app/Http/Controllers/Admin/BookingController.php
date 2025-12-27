@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Notification;
 use App\Notifications\BookingStatusUpdatedNotification;
 
@@ -50,6 +52,14 @@ class BookingController extends Controller
         // Notify user
         Notification::send($booking->user, new BookingStatusUpdatedNotification($booking));
 
+        Log::info('Booking approved', [
+            'event'      => 'booking.approved',
+            'booking_id' => $booking->id,
+            'admin_id'   => Auth::id(),
+            'user_id'    => $booking->user_id,
+            'room_id'    => $booking->room_id,
+        ]);
+
         return redirect()->route('admin.bookings.index')->with('success', 'Booking approved successfully.');
     }
 
@@ -59,6 +69,14 @@ class BookingController extends Controller
 
         // Notify user
         Notification::send($booking->user, new BookingStatusUpdatedNotification($booking));
+
+        Log::info('Booking rejected', [
+            'event'      => 'booking.rejected',
+            'booking_id' => $booking->id,
+            'admin_id'   => Auth::id(),
+            'user_id'    => $booking->user_id,
+            'room_id'    => $booking->room_id,
+        ]);
 
         return redirect()->route('admin.bookings.index')->with('success', 'Booking rejected successfully.');
     }

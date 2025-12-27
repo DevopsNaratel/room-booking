@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Room;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class RoomController extends Controller
 {
@@ -37,7 +38,13 @@ class RoomController extends Controller
             'description' => 'nullable|string',
         ]);
 
-        Room::create($request->all());
+        $room = Room::create($request->all());
+
+        Log::info('Room created', [
+            'event'   => 'room.created',
+            'room_id' => $room->id,
+            'name'    => $room->name,
+        ]);
 
         return redirect()->route('admin.rooms.index')->with('success', 'Room created successfully.');
     }
@@ -72,6 +79,12 @@ class RoomController extends Controller
 
         $room->update($request->all());
 
+        Log::info('Room updated', [
+            'event'   => 'room.updated',
+            'room_id' => $room->id,
+            'name'    => $room->name,
+        ]);
+
         return redirect()->route('admin.rooms.index')->with('success', 'Room updated successfully.');
     }
 
@@ -80,7 +93,16 @@ class RoomController extends Controller
      */
     public function destroy(Room $room)
     {
+        $roomId = $room->id;
+        $roomName = $room->name;
+
         $room->delete();
+
+        Log::info('Room deleted', [
+            'event'   => 'room.deleted',
+            'room_id' => $roomId,
+            'name'    => $roomName,
+        ]);
 
         return redirect()->route('admin.rooms.index')->with('success', 'Room deleted successfully.');
     }

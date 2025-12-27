@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Log;
 use App\Notifications\BookingCreatedNotification;
 
 class BookingController extends Controller
@@ -50,6 +51,15 @@ class BookingController extends Controller
         // Notify admin
         $admins = User::where('role', 'admin')->get();
         Notification::send($admins, new BookingCreatedNotification($booking));
+
+        Log::info('Room has been booked', [
+            'event'      => 'room.booked',
+            'booking_id' => $booking->id,
+            'user_id'    => Auth::id(),
+            'room_id'    => $request->room_id,
+            'start_time' => $request->start_time,
+            'end_time'   => $request->end_time,
+        ]);
 
         return redirect()->route('my-bookings.index')->with('success', 'Booking created successfully and is awaiting approval.');
     }
@@ -97,6 +107,15 @@ class BookingController extends Controller
             'status' => 'pending', // Reset status to pending after update
         ]);
 
+        Log::info('Booking updated', [
+            'event'      => 'booking.updated',
+            'booking_id' => $booking->id,
+            'user_id'    => Auth::id(),
+            'room_id'    => $request->room_id,
+            'start_time' => $request->start_time,
+            'end_time'   => $request->end_time,
+        ]);
+
         return redirect()->route('my-bookings.index')->with('success', 'Booking updated successfully and is awaiting approval.');
     }
 
@@ -107,6 +126,13 @@ class BookingController extends Controller
         }
 
         $booking->delete();
+
+        Log::info('Booking deleted', [
+            'event'      => 'booking.deleted',
+            'booking_id' => $booking->id,
+            'user_id'    => Auth::id(),
+            'room_id'    => $booking->room_id,
+        ]);
 
         return redirect()->route('my-bookings.index')->with('success', 'Booking deleted successfully.');
     }
