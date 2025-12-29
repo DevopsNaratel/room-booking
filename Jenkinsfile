@@ -1,7 +1,6 @@
 pipeline {
     agent {
         kubernetes {
-            // Definisi Pod Agent menggunakan Infrastructure as Code (Docker in Docker)
             yaml '''
 apiVersion: v1
 kind: Pod
@@ -24,18 +23,15 @@ spec:
     }
 
     environment {
-        // --- KONFIGURASI DOCKER ---
-        APP_NAME          = 'room-booking'
-        DOCKER_IMAGE      = "diwamln/${APP_NAME}"
+        // --- DOCKER CONFIGURATION ---
+        DOCKER_IMAGE      = 'diwamln/room-boking'
         DOCKER_CREDS      = 'docker-hub'
         
-        // --- KONFIGURASI GIT (REPO MANIFEST) ---
+        // --- GIT & MANIFEST CONFIGURATION ---
         GIT_CREDS         = 'git-token'
-        MANIFEST_REPO_URL = 'https://github.com/DevopsNaratel/deployment-manifests.git'
-        
-        // --- KONFIGURASI PATH MANIFEST ---
-        MANIFEST_DEV_PATH  = "${APP_NAME}/dev/deployment.yaml"
-        MANIFEST_PROD_PATH = "${APP_NAME}/prod/deployment.yaml"
+        MANIFEST_REPO_URL = 'github.com/DevopsNaratel/deployment-manifests.git'
+        MANIFEST_TEST_PATH = 'room-booking/dev/deployment.yaml'
+        MANIFEST_PROD_PATH = 'room-booking/prod/deployment.yaml'
     }
 
     stages {
@@ -43,10 +39,10 @@ spec:
             steps {
                 checkout scm
                 script {
-                    // Membuat Tag Unik: build-[NOMOR_BUILD]-[GIT_HASH]
+                    // Membuat Tag Unik: build-NUMBER-HASH
                     def commitHash = sh(returnStdout: true, script: "git rev-parse --short HEAD").trim()
                     env.BASE_TAG = "build-${BUILD_NUMBER}-${commitHash}"
-                    currentBuild.displayName = "#${BUILD_NUMBER}-${env.BASE_TAG}"
+                    currentBuild.displayName = "#${BUILD_NUMBER} (${env.BASE_TAG})"
                 }
             }
         }
@@ -54,11 +50,7 @@ spec:
         stage('Build & Push Docker') {
             steps {
                 container('docker') {
-                    withCredentials([usernamePassword(
-                        credentialsId: "${DOCKER_CREDS}", 
-                        passwordVariable: 'DOCKER_PASSWORD', 
-                        usernameVariable: 'DOCKER_USERNAME'
-                    )]) {
+                    withCredentials([usernamePassword(credentialsId: "${DOCKER_CREDS}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME')]) {
                         sh """
                             docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}
                             docker build -t ${DOCKER_IMAGE}:${env.BASE_TAG} .
@@ -71,24 +63,46 @@ spec:
             }
         }
 
-        stage('Update Manifest DEV') {
+        stage('Update Manifest Dev') {
             steps {
-                script {
-                    updateManifest('dev', env.MANIFEST_DEV_PATH)
+                withCredentials([usernamePassword(credentialsId: "${GIT_CREDS}", passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                    sh """
+                        git config --global user.email "jenkins@naratel.net.id"
+                        git config --global user.name "Jenkins CI/CD"
+                        
+                        # Cleanup and Clone
+                        rm -rf temp_manifest
+                        git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@${MANIFEST_REPO_URL} temp_manifest
+                        
+                        cd temp_manifest
+                        
+                        # Update tag using sed (lebih robust dengan delimiter '|')
+                        sed -i "s|image: ${DOCKER_IMAGE}:.*|image: ${DOCKER_IMAGE}:${env.BASE_TAG}|g" ${MANIFEST_TEST_PATH}
+                        
+                        # Commit and Push
+                        git add ${MANIFEST_TEST_PATH}
+                        if ! git diff-index --quiet HEAD; then
+                            git commit -m "chore: update dev image to ${env.BASE_TAG}"
+                            git push origin main
+                        fi
+                    """
                 }
             }
         }
 
-        stage('Approval to PROD') {
+        stage('Promote to Prod (Approval)') {
             steps {
-                input message: "Promote ke PROD?", ok: "Yes, Deploy!"
-            }
-        }
-
-        stage('Promote to PROD') {
-            steps {
-                script {
-                    updateManifest('prod', env.MANIFEST_PROD_PATH)
+                input message: "Promote ke PROD?", ok: "Yes"
+                withCredentials([usernamePassword(credentialsId: "${GIT_CREDS}", passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
+                    sh """
+                        cd temp_manifest
+                        sed -i "s|image: ${DOCKER_IMAGE}:.*|image: ${DOCKER_IMAGE}:${env.BASE_TAG}|g" ${MANIFEST_PROD_PATH}
+                        git add ${MANIFEST_PROD_PATH}
+                        if ! git diff-index --quiet HEAD; then
+                            git commit -m "chore: update prod image to ${env.BASE_TAG}"
+                            git push origin main
+                        fi
+                    """
                 }
             }
         }
@@ -96,33 +110,7 @@ spec:
     
     post {
         always {
-            // Membersihkan workspace untuk efisiensi penyimpanan worker node
             cleanWs()
         }
-    }
-}
-
-// Function reusable untuk update manifest GitOps
-def updateManifest(envName, filePath) {
-    withCredentials([usernamePassword(
-        credentialsId: "${env.GIT_CREDS}", 
-        passwordVariable: 'GIT_PASSWORD', 
-        usernameVariable: 'GIT_USERNAME'
-    )]) {
-        sh """
-            git config --global user.email "jenkins@bot.com"
-            git config --global user.name "Jenkins Bot"
-            
-            rm -rf temp_manifest_${envName}
-            git clone ${env.MANIFEST_REPO_URL} temp_manifest_${envName}
-            cd temp_manifest_${envName}
-            
-            # Update tag image pada file deployment.yaml
-            sed -i "s|image: ${env.DOCKER_IMAGE}:.*|image: ${env.DOCKER_IMAGE}:${env.BASE_TAG}|g" ${filePath}
-            
-            git add .
-            git commit -m "deploy: update ${env.APP_NAME} to ${envName} using image ${env.BASE_TAG}" || true
-            git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/DevopsNaratel/deployment-manifests.git main
-        """
     }
 }
