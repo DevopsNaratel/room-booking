@@ -50,7 +50,7 @@ spec:
         stage('Build & Push Docker') {
             steps {
                 container('docker') {
-                    // Perhatikan perubahan di sini: menggunakan usernamePassword, bukan string
+                    // Gunakan usernamePassword untuk kedua kredensial
                     withCredentials([
                         usernamePassword(
                             credentialsId: "${DOCKER_CREDS}", 
@@ -58,16 +58,17 @@ spec:
                             usernameVariable: 'DOCKER_USERNAME'
                         ),
                         usernamePassword(
-                            credentialsId: "${GIT_CREDS}", 
-                            passwordVariable: 'GITHUB_TOKEN', // Token Anda biasanya ada di sini
-                            usernameVariable: 'GIT_USER'      // Ini username GitHub Anda
+                            credentialsId: "${env.GIT_ID}", // Gunakan ID 'git-token' Anda
+                            passwordVariable: 'GITHUB_TOKEN', // Token diambil dari kolom password
+                            usernameVariable: 'GIT_USER'
                         )
                     ]) {
                         sh """
                             docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}
                             
-                            # Kirim GITHUB_TOKEN (Password dari credential git-token) ke Docker
+                            # Jalankan build dengan network host jika DNS di k8s bermasalah
                             docker build \
+                                --network=host \
                                 --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} \
                                 -t ${DOCKER_IMAGE}:${env.BASE_TAG} .
                             
