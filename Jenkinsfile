@@ -23,11 +23,11 @@ spec:
     }
 
     environment {
-        APP_NAME          = 'room-booking'
-        DOCKER_IMAGE      = "diwamln/${APP_NAME}"
-        DOCKER_CREDS      = 'docker-hub'
-        GIT_CREDS         = 'git-token' // Pastikan ID ini sama dengan di Jenkins Credentials
-        MANIFEST_REPO_URL = 'https://github.com/DevopsNaratel/deployment-manifests.git'
+        APP_NAME           = 'room-booking'
+        DOCKER_IMAGE       = "diwamln/${APP_NAME}" // Sesuai dengan repo DockerHub
+        DOCKER_CREDS       = 'docker-hub'
+        GIT_CREDS          = 'git-token'
+        MANIFEST_REPO_URL  = 'github.com/DevopsNaratel/deployment-manifests.git'
         MANIFEST_DEV_PATH  = "${APP_NAME}/dev/deployment.yaml"
         MANIFEST_PROD_PATH = "${APP_NAME}/prod/deployment.yaml"
     }
@@ -47,13 +47,12 @@ spec:
         stage('Build & Push Docker') {
             steps {
                 container('docker') {
-                    // Perbaikan: Menggunakan GIT_CREDS (bukan GIT_ID)
                     withCredentials([
                         usernamePassword(credentialsId: "${DOCKER_CREDS}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME'),
                         usernamePassword(credentialsId: "${GIT_CREDS}", passwordVariable: 'GITHUB_TOKEN', usernameVariable: 'GIT_USER')
                     ]) {
                         sh """
-                            docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}
+                            echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
                             
                             docker build \
                                 --network=host \
@@ -76,10 +75,12 @@ spec:
         }
 
         stage('Approval to PROD') {
-            steps { input message: "Promote ke PROD?", ok: "Yes, Deploy!" }
+            steps { 
+                input message: "Cek Environment DEV. Lanjut ke PROD?", ok: "Deploy ke Prod" 
+            }
         }
 
-        stage('Promote to PROD') {
+        stage('Update Manifest PROD') {
             steps {
                 script { updateManifest('prod', env.MANIFEST_PROD_PATH) }
             }
@@ -91,23 +92,33 @@ spec:
     }
 }
 
+// === Fungsi Update Manifest (Fixed Regex) ===
 def updateManifest(envName, filePath) {
-    // Perbaikan: Menggunakan GIT_CREDS agar tidak null
     withCredentials([usernamePassword(
         credentialsId: "${env.GIT_CREDS}", 
         passwordVariable: 'GIT_PASSWORD', 
-        usernameVariable: 'GIT_USERNAME'
+        usernameVariable: 'GIT_USER'
     )]) {
         sh """
             git config --global user.email "jenkins@bot.com"
             git config --global user.name "Jenkins Bot"
+            
             rm -rf temp_manifest_${envName}
-            git clone ${env.MANIFEST_REPO_URL} temp_manifest_${envName}
+            git clone https://${GIT_USER}:${GIT_PASSWORD}@${env.MANIFEST_REPO_URL} temp_manifest_${envName}
             cd temp_manifest_${envName}
-            sed -i "s|image: ${env.DOCKER_IMAGE}:.*|image: ${env.DOCKER_IMAGE}:${env.BASE_TAG}|g" ${filePath}
-            git add .
-            git commit -m "deploy: update ${env.APP_NAME} to ${envName} image ${env.BASE_TAG}" || true
-            git push https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/DevopsNaratel/deployment-manifests.git main
+            
+            # Perbaikan Regex: Mencari teks yang mengandung nama image tanpa peduli ada docker.io atau tidak
+            # Ini akan mengupdate initContainers dan containers sekaligus
+            sed -i "s|image: .*${env.DOCKER_IMAGE}:.*|image: ${env.DOCKER_IMAGE}:${env.BASE_TAG}|g" ${filePath}
+            
+            # Cek apakah ada perubahan sebelum push
+            if git diff --exit-code; then
+                echo "No changes detected in ${filePath}. Check if the image name in YAML matches ${env.DOCKER_IMAGE}"
+            else
+                git add ${filePath}
+                git commit -m "deploy: update ${env.APP_NAME} ${envName} to ${env.BASE_TAG} [skip ci]"
+                git push origin main
+            fi
         """
     }
 }
