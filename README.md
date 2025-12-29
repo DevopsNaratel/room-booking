@@ -104,22 +104,6 @@ Keep these docs updated whenever you change routes or high-level flows.
 3. Build assets: `npm run build`.
 4. Configure a queue worker (`php artisan queue:work`) so notifications send instantly.
 
-### Logs & Monitoring (Kubernetes + Loki)
-
-In Kubernetes, prefer writing structured JSON logs to `stderr` so log collectors (Promtail) can scrape them and forward to Grafana Loki.
-
-- Set `LOG_CHANNEL=loki` in your deployment environment (or use `stdout` if you prefer stdout).
-- Promtail should be configured to tail container logs (e.g., `/var/log/containers/*room-booking-*.log`) and parse JSON lines. See `design.md` for an example Promtail `scrape_config` snippet.
-
-Example:
-
-```bash
-# In your deployment manifest set:
-# env:
-#   - name: LOG_CHANNEL
-#     value: "loki"
-```
-
 ## License
 
 This project inherits the Laravel MIT license. See `LICENSE` for details.
