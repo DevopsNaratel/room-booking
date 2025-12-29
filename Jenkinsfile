@@ -50,15 +50,23 @@ spec:
         stage('Build & Push Docker') {
             steps {
                 container('docker') {
-                    // Ambil kredensial Docker dan Token Git sekaligus
+                    // Perhatikan perubahan di sini: menggunakan usernamePassword, bukan string
                     withCredentials([
-                        usernamePassword(credentialsId: "${DOCKER_CREDS}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME'),
-                        string(credentialsId: "${GIT_CREDS}", variable: 'GITHUB_TOKEN') 
+                        usernamePassword(
+                            credentialsId: "${DOCKER_CREDS}", 
+                            passwordVariable: 'DOCKER_PASSWORD', 
+                            usernameVariable: 'DOCKER_USERNAME'
+                        ),
+                        usernamePassword(
+                            credentialsId: "${GIT_CREDS}", 
+                            passwordVariable: 'GITHUB_TOKEN', // Token Anda biasanya ada di sini
+                            usernameVariable: 'GIT_USER'      // Ini username GitHub Anda
+                        )
                     ]) {
                         sh """
                             docker login -u ${DOCKER_USERNAME} -p ${DOCKER_PASSWORD}
                             
-                            # Kirim GITHUB_TOKEN ke dalam Dockerfile lewat --build-arg
+                            # Kirim GITHUB_TOKEN (Password dari credential git-token) ke Docker
                             docker build \
                                 --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} \
                                 -t ${DOCKER_IMAGE}:${env.BASE_TAG} .
