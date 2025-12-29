@@ -2,17 +2,20 @@
 FROM composer:2 as vendor
 WORKDIR /app
 
-# Ambil token dari Jenkins agar tidak kena limit/reset koneksi
+# Ambil token dari Jenkins
 ARG GITHUB_TOKEN
 
 COPY composer.json composer.lock ./
 
-# Konfigurasi agar Composer lebih tangguh
+# KONFIGURASI BENAR:
+# 1. Naikkan timeout
 ENV COMPOSER_PROCESS_TIMEOUT=600
+# 2. Gunakan Token GitHub untuk otentikasi
 RUN if [ ! -z "$GITHUB_TOKEN" ]; then composer config github-oauth.github.com $GITHUB_TOKEN; fi
-RUN composer config preferred-install.dist https
+# 3. Paksa menggunakan 'dist' (ZIP) bukan 'source' (Git)
+RUN composer config preferred-install dist
 
-# Gunakan mekanisme retry (coba lagi jika gagal)
+# Jalankan install dengan retry
 RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction || \
     (sleep 5 && composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction)
 
@@ -24,43 +27,21 @@ RUN npm install
 COPY . .
 RUN npm run build
 
-# --- Stage 3: Testing Image (PHP CLI) ---
+# --- Stage 3: Final Image ---
 FROM php:8.4-cli-alpine
 
-# Install system dependencies
-RUN apk add --no-cache \
-    libpng-dev \
-    libzip-dev \
-    zip \
-    unzip \
-    oniguruma-dev \
-    icu-dev
-
-# Install extension pdo_mysql
+RUN apk add --no-cache libpng-dev libzip-dev zip unzip oniguruma-dev icu-dev git
 RUN docker-php-ext-install pdo_mysql mbstring zip bcmath intl
-
-# Install composer di stage final untuk menjalankan dump-autoload (Opsional tapi aman)
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www
-
-# 1. Copy file project dulu
 COPY . .
-
-# 2. Copy dependencies dari stage vendor
 COPY --from=vendor /app/vendor/ ./vendor/
-
-# 3. Copy assets dari stage frontend
 COPY --from=frontend /app/public/build/ ./public/build/
 
-# --- BARIS KRITIKAL YANG DITAMBAHKAN ---
-# Ini untuk membuat file vendor/autoload.php yang tadi hilang
 RUN composer dump-autoload --optimize --no-dev
-
-# Set permission
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
 USER www-data
 EXPOSE 8000
-
 CMD ["php", "artisan", "serve", "--host=0.0.0.0", "--port=8000"]
