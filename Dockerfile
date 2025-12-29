@@ -1,9 +1,20 @@
 # --- Stage 1: Install PHP Dependencies ---
-FROM composer:latest as vendor
+FROM composer:2 as vendor
 WORKDIR /app
+
+# Ambil token dari Jenkins agar tidak kena limit/reset koneksi
+ARG GITHUB_TOKEN
+
 COPY composer.json composer.lock ./
-# Tetap pakai ini untuk speed, tapi nanti kita generate autoloader-nya
-RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist
+
+# Konfigurasi agar Composer lebih tangguh
+ENV COMPOSER_PROCESS_TIMEOUT=600
+RUN if [ ! -z "$GITHUB_TOKEN" ]; then composer config github-oauth.github.com $GITHUB_TOKEN; fi
+RUN composer config preferred-install.dist https
+
+# Gunakan mekanisme retry (coba lagi jika gagal)
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction || \
+    (sleep 5 && composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction)
 
 # --- Stage 2: Build Frontend Assets ---
 FROM node:20-alpine as frontend
