@@ -73,6 +73,28 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Loki/Promtail (Kubernetes) - write compact JSON to stderr so container logs can be scraped
+        'loki' => [
+            'driver' => 'monolog',
+            'level' => env('LOG_LEVEL', 'debug'),
+            'handler' => StreamHandler::class,
+            'handler_with' => [
+                'stream' => 'php://stderr',
+            ],
+            'tap' => [App\Logging\JsonFormatterTap::class],
+        ],
+
+        // Optional: stdout channel if you prefer stdout instead of stderr
+        'stdout' => [
+            'driver' => 'monolog',
+            'level' => env('LOG_LEVEL', 'debug'),
+            'handler' => StreamHandler::class,
+            'handler_with' => [
+                'stream' => 'php://stdout',
+            ],
+            'tap' => [App\Logging\JsonFormatterTap::class],
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

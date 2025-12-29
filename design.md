@@ -55,12 +55,43 @@ Sistem Booking Ruangan Kampus, aplikasi berbasis web yang memungkinkan mahasiswa
 
 
 ## 🔐 Authorization & Access Control
-- **Middleware**:
   - `auth`
   - `role:admin`
   - `role:mahasiswa`
 
----
+## 📝 Logging
+
+- **File-based logs:** API requests and important actions are logged to the application log (storage/logs/laravel.log).
+- **Middleware:** `ApiLoggingMiddleware` records trace id, user, method, URL, status, duration and attaches `X-Trace-Id` to responses.
+- **Controller events:** Key actions (booking created/updated/deleted, booking approved/rejected, room CRUD) emit structured Log::info events for easy filtering.
+
+- **Loki-ready JSON logs:** Added `loki` daily log channel (storage/logs/laravel-json.log) which writes compact JSON lines suitable for Grafana Loki ingestion. Set `LOG_CHANNEL=loki` in production to enable.
+ 
+- **Kubernetes + Loki:** The `loki` channel now writes compact JSON to `stderr` (recommended for container logs). Set `LOG_CHANNEL=loki` in production so Kubernetes/P omtail can scrape container logs and send them to Grafana Loki.
+
+### Promtail example (kubernetes)
+Add a `scrape_config` that tails container stdout/stderr and parses JSON lines. Example pipeline stages:
+
+```yaml
+scrape_configs:
+  - job_name: room-booking
+    static_configs:
+      - targets: ['localhost']
+        labels:
+          job: room-booking
+          __path__: /var/log/containers/*room-booking-*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            event: event
+            trace_id: trace_id
+      - labels:
+          event: 
+          trace_id:
+```
+
+This parses `event` and `trace_id` from each JSON log line and promotes them to labels for efficient queries.
+
 
 
 ## 🖥️ Rancangan Halaman (UI/UX)

@@ -15,7 +15,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
         ]);
+        // Ensure ApiLogging runs first (creates trace id & context), then EnforceApiAccess
         $middleware->append(\App\Http\Middleware\ApiLoggingMiddleware::class);
+        $middleware->append(\App\Http\Middleware\EnforceApiAccess::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->report(function (\Throwable $e): void {
