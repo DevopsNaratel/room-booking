@@ -1,124 +1,123 @@
 pipeline {
-    agent {
-        kubernetes {
-            yaml '''
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: docker
-    image: docker:24.0.6-dind
-    securityContext:
-      privileged: true
-    volumeMounts:
-    - name: dind-storage
-      mountPath: /var/lib/docker
-  - name: jnlp
-    image: jenkins/inbound-agent:latest
-  volumes:
-  - name: dind-storage
-    emptyDir: {}
-'''
-        }
-    }
+    agent any
 
     environment {
-        APP_NAME           = 'room-booking'
-        DOCKER_IMAGE       = "diwamln/${APP_NAME}" // Sesuai dengan repo DockerHub
-        DOCKER_CREDS       = 'docker-hub'
-        GIT_CREDS          = 'git-token'
-        MANIFEST_REPO_URL  = 'github.com/DevopsNaratel/deployment-manifests.git'
-        MANIFEST_DEV_PATH  = "${APP_NAME}/dev/deployment.yaml"
-        MANIFEST_PROD_PATH = "${APP_NAME}/prod/deployment.yaml"
+        // --- KONFIGURASI APLIKASI ---
+        APP_NAME      = "room-booking"              // Sesuaikan dengan nama aplikasi di Registry/WebUI
+        DOCKER_IMAGE  = "devopsnaratel/room-booking" // Image Repository
+        
+        // --- KONFIGURASI GITOPS ---
+        GITOPS_REPO   = "https://github.com/DevopsNaratel/Deployment-Manifest-App.git"
+        GITOPS_BRANCH = "main"
+        
+        // Credential ID yang tersimpan di Jenkins (Username & Password/Token Git)
+        GIT_CRED_ID   = "git-token" 
+        
+        // Credential ID untuk Docker Hub
+        DOCKER_CRED_ID = "docker-hub"
     }
 
     stages {
-        stage('Checkout & Versioning') {
+        stage('Checkout Code') {
             steps {
                 checkout scm
-                script {
-                    def commitHash = sh(returnStdout: true, script: "git rev-parse --short HEAD").trim()
-                    env.BASE_TAG = "build-${BUILD_NUMBER}-${commitHash}"
-                    currentBuild.displayName = "#${BUILD_NUMBER}-${env.BASE_TAG}"
-                }
             }
         }
 
-        stage('Build & Push Docker') {
+        stage('Build & Push Docker Image') {
             steps {
-                container('docker') {
-                    withCredentials([
-                        usernamePassword(credentialsId: "${DOCKER_CREDS}", passwordVariable: 'DOCKER_PASSWORD', usernameVariable: 'DOCKER_USERNAME'),
-                        usernamePassword(credentialsId: "${GIT_CREDS}", passwordVariable: 'GITHUB_TOKEN', usernameVariable: 'GIT_USER')
-                    ]) {
-                        sh """
-                            echo ${DOCKER_PASSWORD} | docker login -u ${DOCKER_USERNAME} --password-stdin
-                            
-                            docker build \
-                                --network=host \
-                                --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} \
-                                -t ${DOCKER_IMAGE}:${env.BASE_TAG} .
-                            
-                            docker push ${DOCKER_IMAGE}:${env.BASE_TAG}
-                            docker tag ${DOCKER_IMAGE}:${env.BASE_TAG} ${DOCKER_IMAGE}:latest
-                            docker push ${DOCKER_IMAGE}:latest
-                        """
+                script {
+                    docker.withRegistry('', "${DOCKER_CRED_ID}") {
+                        def customImage = docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
+                        customImage.push()
+                        customImage.push("latest")
                     }
                 }
             }
         }
 
-        stage('Update Manifest DEV') {
+        stage('Deploy to Testing') {
             steps {
-                script { updateManifest('dev', env.MANIFEST_DEV_PATH) }
+                script {
+                    updateManifest("testing", "${APP_NAME}", "${DOCKER_IMAGE}", "${BUILD_NUMBER}")
+                }
             }
         }
 
-        stage('Approval to PROD') {
-            steps { 
-                input message: "Cek Environment DEV. Lanjut ke PROD?", ok: "Deploy ke Prod" 
+        // --- APPROVAL GATEWAY (WebUI Integration) ---
+        stage('Waiting for Approval') {
+            steps {
+                script {
+                    echo "Pipeline paused. Waiting for approval via Naratel DevOps Dashboard..."
+                    // 'id' ini penting agar WebUI bisa mengidentifikasi input step
+                    // WebUI Anda akan memanggil API Jenkins untuk meng-approve step ini
+                    input message: 'Approve deployment to Production?', id: 'ApproveDeploy'
+                }
             }
         }
+        // ---------------------------------------------
 
-        stage('Update Manifest PROD') {
+        stage('Deploy to Production') {
             steps {
-                script { updateManifest('prod', env.MANIFEST_PROD_PATH) }
+                script {
+                    updateManifest("prod", "${APP_NAME}", "${DOCKER_IMAGE}", "${BUILD_NUMBER}")
+                }
             }
         }
     }
-    
+
     post {
-        always { cleanWs() }
+        always {
+            cleanWs()
+        }
+        success {
+            echo "Pipeline successfully completed."
+        }
     }
 }
 
-// === Fungsi Update Manifest (Fixed Regex) ===
-def updateManifest(envName, filePath) {
-    withCredentials([usernamePassword(
-        credentialsId: "${env.GIT_CREDS}", 
-        passwordVariable: 'GIT_PASSWORD', 
-        usernameVariable: 'GIT_USER'
-    )]) {
-        sh """
-            git config --global user.email "jenkins@bot.com"
-            git config --global user.name "Jenkins Bot"
+// --- Helper Function untuk Update Manifest GitOps ---
+def updateManifest(envName, appName, imageRepo, imageTag) {
+    // Tentukan folder target berdasarkan struktur folder generator WebUI
+    // Format: apps/[appName]-[env] (contoh: apps/ngetest-testing)
+    def targetFolder = "apps/${appName}-${envName}"
+    
+    dir('gitops-repo') {
+        // Clone GitOps Repo
+        git branch: "${GITOPS_BRANCH}",
+            url: "${GITOPS_REPO}",
+            credentialsId: "${GIT_CRED_ID}"
+
+        // Cek apakah folder aplikasi ada
+        if (fileExists(targetFolder)) {
+            echo "Updating manifest for ${envName} in ${targetFolder}..."
             
-            rm -rf temp_manifest_${envName}
-            git clone https://${GIT_USER}:${GIT_PASSWORD}@${env.MANIFEST_REPO_URL} temp_manifest_${envName}
-            cd temp_manifest_${envName}
+            // Update tag image di values.yaml menggunakan sed
+            // Mencari baris 'tag: "..."' dan menggantinya
+            sh """
+                sed -i 's|tag: ".*"|tag: "${imageTag}"|' ${targetFolder}/values.yaml
+            """
             
-            # Perbaikan Regex: Mencari teks yang mengandung nama image tanpa peduli ada docker.io atau tidak
-            # Ini akan mengupdate initContainers dan containers sekaligus
-            sed -i "s|image: .*${env.DOCKER_IMAGE}:.*|image: ${env.DOCKER_IMAGE}:${env.BASE_TAG}|g" ${filePath}
-            
-            # Cek apakah ada perubahan sebelum push
-            if git diff --exit-code; then
-                echo "No changes detected in ${filePath}. Check if the image name in YAML matches ${env.DOCKER_IMAGE}"
-            else
-                git add ${filePath}
-                git commit -m "deploy: update ${env.APP_NAME} ${envName} to ${env.BASE_TAG} [skip ci]"
-                git push origin main
-            fi
-        """
+            // Konfigurasi Git Identity (jika belum ada di global config agent)
+            sh """
+                git config user.email "jenkins@naratel.id"
+                git config user.name "Jenkins Pipeline"
+            """
+
+            // Commit & Push
+            try {
+                withCredentials([usernamePassword(credentialsId: "${GIT_CRED_ID}", usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
+                    sh """
+                        git add ${targetFolder}/values.yaml
+                        git commit -m "ci: update ${appName} ${envName} image to tag ${imageTag}"
+                        git push https://${GIT_USERNAME}:${GIT_PASSWORD}@${GITOPS_REPO.replace('https://', '')} HEAD:${GITOPS_BRANCH}
+                    """
+                }
+            } catch (Exception e) {
+                echo "No changes to commit or push failed: ${e.message}"
+            }
+        } else {
+            error "Folder ${targetFolder} not found in GitOps repo! Please generate manifest via WebUI first."
+        }
     }
 }
