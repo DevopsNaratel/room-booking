@@ -1,32 +1,31 @@
 ---
 
-# 📋 Standarisasi Logging JSON (Grafana Optimized)
+# 📋 JSON Logging Standards (Grafana Optimized)
 
-Dokumentasi ini adalah panduan bagi developer untuk menghasilkan log yang terstandarisasi. Standar ini dirancang agar log kita dapat diproses secara otomatis oleh **Loki** dan divisualisasikan secara akurat pada dashboard **Apps Activity Log**.
-
----
-
-## 🏗️ 1. Core Fields (Wajib)
-
-Setiap entri log harus berupa objek JSON satu baris dengan field berikut:
-
-| Field | Tipe | Deskripsi |
-| --- | --- | --- |
-| `timestamp` | ISO8601 | Waktu UTC saat log dibuat. |
-| `level` | String | `info`, `warn`, `error`. |
-| `message` | String | Deskripsi event. |
-| `path` | String | Endpoint API atau Komponen internal. |
-| `requestId` | UUID | Trace ID untuk tracking request. |
-| `method` | String | `GET`, `POST`, atau `INTERNAL`. |
+This document serves as a guide for developers to generate standardized logs. These standards ensure that logs are automatically processed by **Loki** and accurately visualized within the **Apps Activity Log** dashboard.
 
 ---
 
-## 🚀 2. Implementasi & Contoh Log
+## 1. Core Fields (Mandatory)
 
-### A. Logging Request (Info)
+Each log entry must be a **single-line JSON object** containing:
 
-Digunakan untuk mencatat traffic masuk. Pastikan `level` diisi `info`.
+| Field       | Type        | Description                |
+| ----------- | ----------- | -------------------------- |
+| `timestamp` | ISO8601 UTC | Log timestamp              |
+| `level`     | String      | `info`, `warn`, `error`    |
+| `message`   | String      | Short event description    |
+| `path`      | String      | Endpoint or component name |
+| `requestId` | UUID        | Request trace identifier   |
+| `method`    | String      | HTTP verb or `INTERNAL`    |
 
+---
+
+## 2. Request Logging (`info`)
+
+Used to record inbound requests.
+
+* **Example Output:**
 ```json
 {
   "timestamp": "2026-01-15T14:00:01.123Z",
@@ -37,18 +36,18 @@ Digunakan untuk mencatat traffic masuk. Pastikan `level` diisi `info`.
   "message": "Incoming request to create order",
   "attributes": {
     "user_id": 1024,
-    "source": "mobile-app"
+    "order_type": "smartphone"
   }
 }
-
 ```
 
 ---
 
-### B. Logging Query Database
+## 3. Database Query Logging (`info`)
 
-Dashboard memiliki panel khusus untuk memantau performa query. Agar terbaca, Anda **WAJIB** menggunakan pesan `"Executed query"`.
+Must use exact `message`: `"Executed query"` for dashboard compatibility.
 
+* **Example Output:**
 ```json
 {
   "timestamp": "2026-01-15T14:05:10.456Z",
@@ -59,26 +58,19 @@ Dashboard memiliki panel khusus untuk memantau performa query. Agar terbaca, And
   "message": "Executed query",
   "attributes": {
     "query": "SELECT id FROM boards WHERE id = $1 AND user_id = $2",
-    "duration": 3,
-    "rows": 1
+    "duration_ms": 3,
+    "rows_affected": 1
   }
 }
-
 ```
 
 ---
 
-### C. Logging Error vs Warning (Level-Based)
+## 4. Warning Logging (`warn`)
 
-Anda harus membedakan penggunaan `level` berdasarkan keparahan kejadian.
+Used for degraded behavior that does not interrupt execution.
 
-#### 1. Level: `warn` (Warning)
-
-Gunakan level ini untuk kejadian yang **tidak menghentikan sistem**, tetapi memerlukan perhatian (misal: performa melambat, validasi bisnis gagal, atau *threshold* hampir tercapai).
-
-* **Logic:** Gunakan saat terjadi *slow response* atau *retries*.
-* **Contoh Output:**
-
+* **Example Output:**
 ```json
 {
   "timestamp": "2026-01-15T14:10:00.123Z",
@@ -92,16 +84,15 @@ Gunakan level ini untuk kejadian yang **tidak menghentikan sistem**, tetapi meme
     "thresholdMs": 1000
   }
 }
-
 ```
 
-#### 2. Level: `error` (Error)
+---
 
-Gunakan level ini untuk **kegagalan fatal** yang menyebabkan request gagal atau sistem berhenti berfungsi (misal: koneksi database terputus, 5xx status codes, atau *unhandled exceptions*).
+## 5. Error Logging (`error`)
 
-* **Logic:** Gunakan di dalam blok `catch` atau saat integrasi pihak ketiga mati total.
-* **Contoh Output:**
+Used for failures that cause request errors or system malfunction.
 
+* **Example Output:**
 ```json
 {
   "timestamp": "2026-01-15T14:10:05.999Z",
@@ -116,7 +107,12 @@ Gunakan level ini untuk **kegagalan fatal** yang menyebabkan request gagal atau 
     "stack": "Error: Connect ETIMEDOUT 10.20.30.40:443"
   }
 }
-
 ```
+
+---
+
+## 6. Runtime Output (K3s Requirement)
+
+Applications must emit logs to **stdout** for ingestion by Promtail or Fluent-Bit.
 
 ---

@@ -16,6 +16,12 @@ class RoleMiddleware
     public function handle(Request $request, Closure $next, $role)
     {
         if ($request->user()->role !== $role) {
+            \Illuminate\Support\Facades\Log::warn('Unauthorized role access attempt', [
+                'user_id' => $request->user()->id,
+                'email' => $request->user()->email,
+                'required_role' => $role,
+                'actual_role' => $request->user()->role,
+            ]);
             abort(403, 'Unauthorized action.');
         }
 
