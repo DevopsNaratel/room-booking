@@ -12,46 +12,45 @@ class JsonFormatter extends NormalizerFormatter
      */
     public function format(LogRecord $record): string
     {
-        $normalized = $this->normalize($record);
+        $level = strtolower($record->level->name);
+
+        $mappedLevel = match ($level) {
+            'debug', 'info', 'notice' => 'info',
+            'warning' => 'warn',
+            'error', 'critical', 'alert', 'emergency' => 'error',
+            default => 'info',
+        };
 
         $output = [
             'timestamp' => $record->datetime->format('Y-m-d\TH:i:s.v\Z'),
-            'level' => match (true) {
-                in_array($record->level->name, ['DEBUG', 'INFO', 'NOTICE']) => 'info',
-                $record->level->name === 'WARNING' => 'warn',
-                in_array($record->level->name, ['ERROR', 'CRITICAL', 'ALERT', 'EMERGENCY']) => 'error',
-                default => 'info',
-            },
+            'level' => $mappedLevel,
             'requestId' => $record->context['requestId'] ?? $record->extra['requestId'] ?? 'INTERNAL',
             'method' => $record->context['method'] ?? $record->extra['method'] ?? 'INTERNAL',
             'path' => $record->context['path'] ?? $record->extra['path'] ?? 'INTERNAL',
             'message' => $record->message,
         ];
 
-        // Add attributes if they exist and are not already in the main output
-        $attributes = array_diff_key($record->context, array_flip(['requestId', 'method', 'path', 'exception']));
-        if (!empty($attributes)) {
-            $output['attributes'] = $attributes;
-        }
+        $context = $record->context;
+        $exception = $context['exception'] ?? null;
 
-        // Handle error field for error level
-        if ($record->level->name === 'ERROR' || isset($record->context['exception'])) {
-            $exception = $record->context['exception'] ?? null;
+        // Add error object for error level or if an exception is present
+        if ($mappedLevel === 'error' || $exception instanceof \Throwable) {
             if ($exception instanceof \Throwable) {
                 $output['error'] = [
-                    'code' => $record->context['error_code'] ?? 'INTERNAL_ERROR',
+                    'code' => $context['error_code'] ?? 'INTERNAL_ERROR',
                     'details' => $exception->getMessage(),
                     'stack' => substr($exception->getTraceAsString(), 0, 1000),
                 ];
-            } elseif (isset($record->context['error'])) {
-                $output['error'] = $record->context['error'];
+            } elseif (isset($context['error'])) {
+                $output['error'] = $context['error'];
             }
         }
 
-        // Remove requestId/method/path from attributes if they were moved to top level
-        unset($output['attributes']['requestId'], $output['attributes']['method'], $output['attributes']['path']);
-        if (empty($output['attributes'])) {
-            unset($output['attributes']);
+        // Remove known top-level fields from context before moving the rest to attributes
+        unset($context['requestId'], $context['method'], $context['path'], $context['exception'], $context['error_code']);
+
+        if (!empty($context)) {
+            $output['attributes'] = $context;
         }
 
         return $this->toJson($output) . "\n";

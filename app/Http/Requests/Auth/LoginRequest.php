@@ -44,10 +44,11 @@ class LoginRequest extends FormRequest
         if (!Auth::attempt($this->only('email', 'password'), $this->boolean('remember'))) {
             \Illuminate\Support\Facades\RateLimiter::hit($this->throttleKey());
 
-            \Illuminate\Support\Facades\Log::warning('Failed login attempt', [
+            \Illuminate\Support\Facades\Log::error('Failed login attempt', [
                 'email' => $this->email,
                 'ip_address' => $this->ip(),
-                'reason' => 'Invalid credentials'
+                'reason' => 'Invalid credentials',
+                'error_code' => 'AUTH_FAILED'
             ]);
 
             throw ValidationException::withMessages([
@@ -77,10 +78,11 @@ class LoginRequest extends FormRequest
 
         $seconds = RateLimiter::availableIn($this->throttleKey());
 
-        \Illuminate\Support\Facades\Log::warning('Login attempt rate limited', [
+        \Illuminate\Support\Facades\Log::error('Login attempt rate limited', [
             'email' => $this->email,
             'ip_address' => $this->ip(),
-            'available_in_seconds' => $seconds
+            'available_in_seconds' => $seconds,
+            'error_code' => 'AUTH_THROTTLED'
         ]);
 
         throw ValidationException::withMessages([
