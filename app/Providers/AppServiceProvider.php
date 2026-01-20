@@ -22,8 +22,8 @@ class AppServiceProvider extends ServiceProvider
         \Illuminate\Support\Facades\DB::listen(function ($query) {
             \Illuminate\Support\Facades\Log::info('Executed query', [
                 'query' => $query->sql,
-                'duration' => $query->time,
-                'rows' => count($query->bindings),
+                'duration_ms' => $query->time,
+                'rows_affected' => count($query->bindings),
                 'method' => 'INTERNAL',
             ]);
         });

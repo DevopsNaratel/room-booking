@@ -34,6 +34,10 @@ class ProfileController extends Controller
 
         $request->user()->save();
 
+        \Illuminate\Support\Facades\Log::info('Profile updated', [
+            'user_id' => $request->user()->id,
+        ]);
+
         return Redirect::route('profile.edit')->with('status', 'profile-updated');
     }
 
@@ -47,10 +51,15 @@ class ProfileController extends Controller
         ]);
 
         $user = $request->user();
+        $userId = $user->id;
 
         Auth::logout();
 
         $user->delete();
+
+        \Illuminate\Support\Facades\Log::info('Account deleted', [
+            'user_id' => $userId,
+        ]);
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();
