@@ -16,7 +16,11 @@ class JsonFormatter extends NormalizerFormatter
 
         $output = [
             'timestamp' => $record->datetime->format('Y-m-d\TH:i:s.v\Z'),
-            'level' => strtolower($record->level->name),
+            'level' => match ($record->level->name) {
+                'DEBUG', 'INFO', 'NOTICE' => 'info',
+                'WARNING' => 'warn',
+                default => 'error', // ERROR, CRITICAL, ALERT, EMERGENCY
+            },
             'requestId' => $record->context['requestId'] ?? $record->extra['requestId'] ?? 'INTERNAL',
             'method' => $record->context['method'] ?? $record->extra['method'] ?? 'INTERNAL',
             'path' => $record->context['path'] ?? $record->extra['path'] ?? 'INTERNAL',

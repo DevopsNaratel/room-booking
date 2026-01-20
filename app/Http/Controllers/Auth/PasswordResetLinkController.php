@@ -43,7 +43,7 @@ class PasswordResetLinkController extends Controller
             return back()->with('status', __($status));
         }
 
-        \Illuminate\Support\Facades\Log::warn('Password reset link failed', [
+        \Illuminate\Support\Facades\Log::warning('Password reset link failed', [
             'email' => $request->email,
             'reason' => __($status),
         ]);
