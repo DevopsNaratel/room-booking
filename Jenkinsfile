@@ -28,12 +28,12 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    // withSonarQubeEnv akan otomatis menginjeksi URL & Token dari Jenkins Config
+                    // Memanggil tool yang sudah didaftarkan di Manage Jenkins > Tools
+                    def scannerHome = tool 'sonar-scanner' 
+                    
                     withSonarQubeEnv("${SONAR_SERVER_ID}") {
-                        // Untuk Laravel, gunakan sonar-scanner
-                        // Pastikan sonar-scanner sudah terinstal di Jenkins Tools
                         sh """
-                            sonar-scanner \
+                            ${scannerHome}/bin/sonar-scanner \
                             -Dsonar.projectKey=${APP_NAME} \
                             -Dsonar.sources=. \
                             -Dsonar.host.url=${SONAR_HOST_URL} \
