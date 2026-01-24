@@ -47,6 +47,18 @@ pipeline {
                 }
             }
         }
+                
+        stage('SonarQube Analysis') {
+            steps {
+                script {
+                    def scannerHome = tool 'sonar-scanner'
+                    withSonarQubeEnv("${SONAR_SERVER_ID}") {
+                        // Sederhanakan! Host & Login sudah dihandle oleh plugin
+                        sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=${APP_NAME} -Dsonar.sources=."
+                    }
+                }
+            }
+        }
 
         stage('Trivy Library Scan (SCA)') {
             steps {
@@ -66,24 +78,12 @@ pipeline {
                         
                         # 3. Jalankan scan
                         echo "Menjalankan pemindaian library..."
-                        \$TRIVY_DIR/trivy fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln .
+                        \$TRIVY_DIR/trivy fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln --format table .
                     """
                 }
             }
         }
-                
-        stage('SonarQube Analysis') {
-            steps {
-                script {
-                    def scannerHome = tool 'sonar-scanner'
-                    withSonarQubeEnv("${SONAR_SERVER_ID}") {
-                        // Sederhanakan! Host & Login sudah dihandle oleh plugin
-                        sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=${APP_NAME} -Dsonar.sources=."
-                    }
-                }
-            }
-        }
-
+        
         stage('Quality Gate') {
             steps {
                 script {
