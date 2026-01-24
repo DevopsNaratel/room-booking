@@ -59,6 +59,21 @@ pipeline {
                 }
             }
         }
+        
+        stage('Quality Gate') {
+            steps {
+                script {
+                    // Pipeline akan berhenti di sini jika Quality Gate di SonarQube gagal (Fail)
+                    // Memerlukan Webhook yang sudah dikonfigurasi di SonarQube ke Jenkins
+                    timeout(time: 5, unit: 'MINUTES') {
+                        def qg = waitForQualityGate()
+                        if (qg.status != 'OK') {
+                            error "Pipeline dihentikan karena Quality Gate Gagal: ${qg.status}"
+                        }
+                    }
+                }
+            }
+        }
 
         stage('Trivy Library Scan (SCA)') {
             steps {
@@ -80,21 +95,6 @@ pipeline {
                         echo "Menjalankan pemindaian library..."
                         \$TRIVY_DIR/trivy fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln --format table .
                     """
-                }
-            }
-        }
-        
-        stage('Quality Gate') {
-            steps {
-                script {
-                    // Pipeline akan berhenti di sini jika Quality Gate di SonarQube gagal (Fail)
-                    // Memerlukan Webhook yang sudah dikonfigurasi di SonarQube ke Jenkins
-                    timeout(time: 5, unit: 'MINUTES') {
-                        def qg = waitForQualityGate()
-                        if (qg.status != 'OK') {
-                            error "Pipeline dihentikan karena Quality Gate Gagal: ${qg.status}"
-                        }
-                    }
                 }
             }
         }
