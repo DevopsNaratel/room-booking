@@ -24,21 +24,61 @@ pipeline {
             }
         }
 
-        // --- STAGE SONARQUBE MULAI DI SINI ---
+        stage('Gitleaks Secret Scan') {
+            steps {
+                script {
+                    sh """
+                        # 1. Gunakan folder /tmp agar terpisah dari source code
+                        GITLEAKS_TMP="/tmp/gitleaks_tool"
+                        mkdir -p \$GITLEAKS_TMP
+                        
+                        # 2. Download dan ekstrak (pake v8.18.2 atau v8.30.0 oke saja)
+                        if [ ! -f "\$GITLEAKS_TMP/gitleaks" ]; then
+                            echo "Mengunduh Gitleaks..."
+                            curl -sfL https://github.com/gitleaks/gitleaks/releases/download/v8.18.2/gitleaks_8.18.2_linux_x64.tar.gz | tar -xz -C \$GITLEAKS_TMP
+                            # Tambahkan izin eksekusi untuk mencegah error 126
+                            chmod +x \$GITLEAKS_TMP/gitleaks
+                        fi
+                        
+                        # 3. Jalankan scan pada folder saat ini (.)
+                        # Tanpa --exclude-path karena binary sudah di luar folder kerja
+                        \$GITLEAKS_TMP/gitleaks detect --source . --no-git --exit-code 1 -v
+                    """
+                }
+            }
+        }
+
+        stage('Trivy Library Scan (SCA)') {
+            steps {
+                script {
+                    sh """
+                        # 1. Setup folder tool
+                        TRIVY_DIR="/tmp/trivy_tool"
+                        mkdir -p \$TRIVY_DIR
+                        
+                        # 2. Download binary secara manual (Pilih versi v0.48.3 yang stabil)
+                        if [ ! -f "\$TRIVY_DIR/trivy" ]; then
+                            echo "Mengunduh Trivy binary..."
+                            # Mengunduh tarball langsung sesuai arsitektur Linux 64-bit
+                            curl -sfL https://github.com/aquasecurity/trivy/releases/download/v0.48.3/trivy_0.48.3_Linux-64bit.tar.gz | tar -xz -C \$TRIVY_DIR
+                            chmod +x \$TRIVY_DIR/trivy
+                        fi
+                        
+                        # 3. Jalankan scan
+                        echo "Menjalankan pemindaian library..."
+                        \$TRIVY_DIR/trivy fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln .
+                    """
+                }
+            }
+        }
+                
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    // Memanggil tool yang sudah didaftarkan di Manage Jenkins > Tools
-                    def scannerHome = tool 'sonar-scanner' 
-                    
+                    def scannerHome = tool 'sonar-scanner'
                     withSonarQubeEnv("${SONAR_SERVER_ID}") {
-                        sh """
-                            ${scannerHome}/bin/sonar-scanner \
-                            -Dsonar.projectKey=${APP_NAME} \
-                            -Dsonar.sources=. \
-                            -Dsonar.host.url=${SONAR_HOST_URL} \
-                            -Dsonar.login=${SONAR_AUTH_TOKEN}
-                        """
+                        // Sederhanakan! Host & Login sudah dihandle oleh plugin
+                        sh "${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=${APP_NAME} -Dsonar.sources=."
                     }
                 }
             }
@@ -58,7 +98,6 @@ pipeline {
                 }
             }
         }
-        // --- STAGE SONARQUBE SELESAI ---
 
         stage('Build & Push Docker Image') {
             // Stage ini hanya akan jalan jika Quality Gate Status adalah 'OK'
@@ -73,6 +112,23 @@ pipeline {
             }
         }
 
+        stage('Trivy Security Scan') {
+            steps {
+                script {
+                    echo "Scanning Image using Dockerized Trivy..."
+                    // Kita jalankan container trivy yang meminjam docker.sock dari host
+                    sh """
+                        docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+                        aquasec/trivy:latest image \
+                        --exit-code 1 \
+                        --severity CRITICAL \
+                        --scanners vuln,secret \
+                        ${DOCKER_IMAGE}:${APP_VERSION}
+                    """
+                }
+            }
+        }
+        
         stage('Deploy to Testing') {
             steps {
                 script { 
@@ -137,9 +193,6 @@ def syncManifest(envName, appName, imageRepo, imageTag, replicas) {
                 else
                     echo 'replicaCount: ${replicas}' >> ${valFile}
                 fi
-
-                # Memastikan targetPort selalu 80 sesuai Dockerfile Anda
-                sed -i 's|targetPort: .*|targetPort: 80|' ${valFile}
 
                 # Konfigurasi NodePort khusus Testing
                 if [ "${envName}" == "testing" ]; then
