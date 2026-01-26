@@ -3,9 +3,12 @@ pipeline {
 
     environment {
         // --- App Metadata ---
-        APP_NAME        = "room-booking"
-        DOCKER_IMAGE    = "devopsnaratel/room-booking"
+        APP_NAME        = "sybau"
+        DOCKER_IMAGE    = "devopsnaratel/diwapp"
         APP_VERSION     = ""
+        
+        // --- WebUI & API Config ---
+        WEBUI_API       = "http://localhost:3002"
         
         // --- Repository & Credentials ---
         GITOPS_REPO     = "https://github.com/DevopsNaratel/Deployment-Manifest-App.git"
@@ -26,15 +29,16 @@ pipeline {
                         script: "git describe --tags --always --abbrev=0 || echo ${BUILD_NUMBER}", 
                         returnStdout: true
                     ).trim()
+                    echo "🚀 Building Version: ${APP_VERSION}"
                 }
             }
             post {
-                success { echo "✅ [CHECKOUT] Berhasil mengambil source code. Versi: ${APP_VERSION}" }
-                failure { echo "❌ [CHECKOUT] Gagal melakukan git checkout." }
+                success { echo "✅ [CHECKOUT] Source code ready. Version: ${APP_VERSION}" }
+                failure { echo "❌ [CHECKOUT] Failed to fetch source code." }
             }
         }
 
-        stage('Gitleaks Secret Scan') {
+        stage('Security: Gitleaks Scan') {
             steps {
                 script {
                     sh """
@@ -49,12 +53,12 @@ pipeline {
                 }
             }
             post {
-                success { echo "✅ [GITLEAKS] Aman! Tidak ada secret (token/key) yang bocor." }
-                failure { echo "❌ [GITLEAKS] Bahaya! Ditemukan potensi kebocoran secret di source code." }
+                success { echo "✅ [GITLEAKS] No secrets leaked." }
+                failure { echo "❌ [GITLEAKS] Secrets detected in source code!" }
             }
         }
 
-        stage('SonarQube Analysis') {
+        stage('Security: SonarQube Analysis') {
             steps {
                 script {
                     def scannerHome = tool 'sonar-scanner'
@@ -64,29 +68,28 @@ pipeline {
                 }
             }
             post {
-                success { echo "✅ [SONARQUBE] Analisis kode selesai dikirim ke server." }
-                failure { echo "❌ [SONARQUBE] Gagal mengirim analisis ke SonarQube." }
+                failure { echo "❌ [SONARQUBE] Analysis submission failed." }
             }
         }
 
-        stage('Quality Gate') {
+        stage('Security: Quality Gate') {
             steps {
                 script {
                     timeout(time: 5, unit: 'MINUTES') {
                         def qg = waitForQualityGate()
                         if (qg.status != 'OK') {
-                            error "Pipeline dihentikan karena Quality Gate Gagal: ${qg.status}"
+                            error "Pipeline stopped: Quality Gate Failed (${qg.status})"
                         }
                     }
                 }
             }
             post {
-                success { echo "✅ [QUALITY GATE] Lolos! Kode memenuhi standar kualitas." }
-                failure { echo "❌ [QUALITY GATE] Tidak Lolos! Periksa laporan di Dashboard SonarQube." }
+                success { echo "✅ [QUALITY GATE] Code quality passed." }
+                failure { echo "❌ [QUALITY GATE] Code quality failed." }
             }
         }
 
-        stage('Trivy Library Scan (SCA)') {
+        stage('Security: Trivy Library Scan') {
             steps {
                 script {
                     sh """
@@ -101,8 +104,8 @@ pipeline {
                 }
             }
             post {
-                success { echo "✅ [TRIVY SCA] Tidak ditemukan kerentanan HIGH/CRITICAL pada library." }
-                failure { echo "❌ [TRIVY SCA] Ditemukan kerentanan keamanan pada library aplikasi." }
+                success { echo "✅ [TRIVY SCA] Libraries are secure." }
+                failure { echo "❌ [TRIVY SCA] Vulnerabilities found in libraries!" }
             }
         }
 
@@ -117,12 +120,12 @@ pipeline {
                 }
             }
             post {
-                success { echo "✅ [DOCKER] Image ${DOCKER_IMAGE}:${APP_VERSION} berhasil dipush ke registry." }
-                failure { echo "❌ [DOCKER] Gagal membangun atau melakukan push image." }
+                success { echo "✅ [DOCKER] Image pushed: ${DOCKER_IMAGE}:${APP_VERSION}" }
+                failure { echo "❌ [DOCKER] Build/Push failed." }
             }
         }
 
-        stage('Trivy Security Scan') {
+        stage('Security: Trivy Image Scan') {
             steps {
                 script {
                     sh """
@@ -134,69 +137,92 @@ pipeline {
                 }
             }
             post {
-                success { echo "✅ [TRIVY IMAGE] Docker image dinyatakan aman dari kerentanan CRITICAL." }
-                failure { echo "❌ [TRIVY IMAGE] Docker image mengandung celah keamanan kritikal!" }
+                success { echo "✅ [TRIVY IMAGE] Docker image is clean (No CRITICAL vuln)." }
+                failure { echo "❌ [TRIVY IMAGE] Critical vulnerabilities found in image!" }
             }
         }
 
-        stage('Deploy to Testing') {
+        stage('Deploy to Testing (GitOps + WebUI)') {
             steps {
-                script { 
-                    syncManifest("testing", APP_NAME, DOCKER_IMAGE, APP_VERSION, 1) 
+                script {
+                    // 1. Update GitOps Manifest
+                    syncManifest("testing", APP_NAME, DOCKER_IMAGE, APP_VERSION, 1)
+                    
+                    // 2. Trigger WebUI for Ephemeral Environment
+                    echo "🔗 Triggering WebUI Ephemeral Environment..."
+                    def response = sh(script: """
+                        curl -s -X POST ${WEBUI_API}/api/jenkins/deploy-test \
+                        -H "Content-Type: application/json" \
+                        -d '{"appName": "${APP_NAME}", "imageTag": "${APP_VERSION}"}'
+                    """, returnStdout: true).trim()
+
+                    echo "WebUI Response: ${response}"
+                    if (response.contains('"error"')) { error "WebUI Deploy Error: ${response}" }
+                    
+                    echo "Waiting for pods to be ready..."
+                    sleep 60
                 }
             }
             post {
-                success { echo "✅ [DEPLOY TESTING] Manifest berhasil diupdate. ArgoCD akan mensinkronisasi ke K3s." }
-                failure { echo "❌ [DEPLOY TESTING] Gagal mengupdate manifest testing." }
+                success { echo "✅ [DEPLOY TESTING] Environment ready & GitOps synced." }
             }
         }
 
-        stage('Waiting for Approval') {
+        stage('Approval for Production') {
             steps {
                 script {
-                    echo "⏳ Menunggu persetujuan user untuk lanjut ke Production..."
+                    echo "⏳ Menunggu persetujuan untuk Production..."
                     try {
                         input message: "Approve deploy ${APP_VERSION} ke Prod?", id: 'ApproveDeploy'
                     } catch (Exception e) {
                         currentBuild.result = 'ABORTED'
                         error "Deployment dibatalkan."
-                    } finally {
-                        echo "📉 Scaling down Testing environment..."
-                        syncManifest("testing", APP_NAME, DOCKER_IMAGE, APP_VERSION, 0)
                     }
                 }
             }
         }
 
-        stage('Deploy to Production') {
+        stage('Deploy to Production (GitOps + WebUI)') {
             steps {
                 script { 
-                    syncManifest("prod", APP_NAME, DOCKER_IMAGE, APP_VERSION, 1) 
+                    // 1. Update GitOps Manifest
+                    syncManifest("prod", APP_NAME, DOCKER_IMAGE, APP_VERSION, 1)
+
+                    // 2. Notify WebUI for Manifest Update
+                    echo "🔗 Notifying WebUI for Production Update..."
+                    def response = sh(script: """
+                        curl -s -X POST ${WEBUI_API}/api/manifest/update-image \
+                        -H "Content-Type: application/json" \
+                        -d '{"appName": "${APP_NAME}", "env": "prod", "imageTag": "${APP_VERSION}"}'
+                    """, returnStdout: true).trim()
+
+                    echo "WebUI Response: ${response}"
+                    if (response.contains('"error"')) { error "WebUI Prod Update Error: ${response}" }
                 }
             }
             post {
-                success { echo "🚀 [DEPLOY PROD] Selesai! Aplikasi ${APP_VERSION}:${APP_VERSION} sudah dirilis ke Production." }
-                failure { echo "❌ [DEPLOY PROD] Gagal melakukan update manifest Production." }
+                success { echo "🚀 [DEPLOY PROD] Release version ${APP_VERSION} is LIVE." }
+                failure { echo "❌ [DEPLOY PROD] Production release failed." }
             }
         }
     }
 
     post {
         always {
-            echo "🧹 Membersihkan workspace..."
-            cleanWs()
-        }
-        success {
-            echo "🎉 Pipeline selesai dengan sukses!"
-        }
-        failure {
-            echo "🏮 Pipeline gagal. Silakan periksa detail log di atas."
+            script {
+                echo "🧹 Cleaning up Ephemeral Testing Environment..."
+                sh """
+                    curl -s -X POST ${WEBUI_API}/api/jenkins/destroy-test \
+                    -H "Content-Type: application/json" \
+                    -d '{"appName": "${APP_NAME}"}'
+                """
+                cleanWs()
+            }
         }
     }
 }
 
 // --- Shared Functions ---
-
 def syncManifest(envName, appName, imageRepo, imageTag, replicas) {
     def targetFolder = "apps/${appName}-${envName}"
     def gitRepoPath  = "gitops-${envName}-${envName.hashCode().toString().take(5)}"
@@ -210,19 +236,13 @@ def syncManifest(envName, appName, imageRepo, imageTag, replicas) {
 
         if (fileExists(targetFolder)) {
             def valFile = "${targetFolder}/values.yaml"
-            
             sh """
-                # Update Image Tag
                 sed -i "s|tag: ['\\\"].*['\\\"]|tag: '${imageTag}'|" ${valFile}
-                
-                # Update Replica Count
                 if grep -q '^replicaCount:' ${valFile}; then
                     sed -i 's|^replicaCount: .*|replicaCount: ${replicas}|' ${valFile}
                 else
                     echo 'replicaCount: ${replicas}' >> ${valFile}
                 fi
-
-                # Testing Environment Specifics
                 if [ "${envName}" == "testing" ]; then
                     sed -i '/^[[:space:]]*type: ClusterIP/d' ${valFile}
                     if ! grep -q 'type: NodePort' ${valFile}; then
@@ -231,7 +251,6 @@ def syncManifest(envName, appName, imageRepo, imageTag, replicas) {
                     sed -i '/^ingress:/,/^[^ ]/ s/enabled: true/enabled: false/' ${valFile}
                 fi
             """
-
             withCredentials([usernamePassword(credentialsId: "${GIT_CRED_ID}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
                 def remoteUrl = GITOPS_REPO.replace("https://", "https://${GIT_USER}:${GIT_PASS}@")
                 sh """
