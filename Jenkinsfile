@@ -3,8 +3,8 @@ pipeline {
 
     environment {
         // --- App Metadata ---
-        APP_NAME        = "sybau"
-        DOCKER_IMAGE    = "devopsnaratel/diwapp"
+        APP_NAME        = "room-booking"
+        DOCKER_IMAGE    = "devopsnaratel/room-booking"
         APP_VERSION     = ""
         
         // --- WebUI & API Config ---
