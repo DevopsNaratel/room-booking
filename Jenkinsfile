@@ -1,7 +1,7 @@
 @Library('jenkins-pipeline-library') _
 
 standardDevOps(
-    appName     : "todo-app-php",
-    dockerImage : "devopsnaratel/todo-app-php",
+    appName     : "room-booking",
+    dockerImage : "devopsnaratel/room-booking",
     gitopsRepo  : "https://github.com/DevopsNaratel/Deployment-Manifest-App.git",
 )
